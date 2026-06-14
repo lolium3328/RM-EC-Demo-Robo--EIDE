@@ -12,7 +12,8 @@
       "--query-driver=arm-none-eabi-gcc", // 指定 clangd 使用 arm-none-eabi-gcc 作为编译器，以正确解析代码（主要用于避免 Arm GCC 系统库报错）
       "--background-index", // 启用后台索引功能，以提高代码导航和智能提示的性能
       "--clang-tidy", // 启用 clang-tidy 进行代码检查
-      "--header-insertion=never"
+      "--header-insertion=never", // 禁止 clangd 自动插入缺失的头文件，以避免不必要的代码修改
+      "--compile-commands-dir=build/Debug" // 指定编译命令文件所在的目录，以便 clangd 能够正确解析项目结构和编译选项
     ],
     // 禁用 Microsoft C/C++ 插件的 IntelliSense 功能，因为 clangd 插件已经提供了完整的代码分析和智能提示功能。
     "C_Cpp.intelliSenseEngine": "disabled",
