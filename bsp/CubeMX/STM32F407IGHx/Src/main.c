@@ -20,6 +20,7 @@
 #include "main.h"
 #include "cmsis_os.h"
 #include "can.h"
+#include "tim.h"
 #include "usart.h"
 #include "usb_device.h"
 #include "gpio.h"
@@ -93,6 +94,7 @@ int main(void)
   MX_GPIO_Init();
   MX_USART6_UART_Init();
   MX_CAN1_Init();
+  MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
   bsp_init_before_rtos_init();
   /* USER CODE END 2 */

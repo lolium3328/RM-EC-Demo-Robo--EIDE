@@ -1,10 +1,16 @@
 #pragma once
 #include <cstdint>
 
+#include "bsp/buzzer.hpp"
 #include "bus/can_bus.hpp"
 #include "cmsis_os2.h"
 
 inline static void task_demo(void*) {
+    // BUZZER BOOT TEST BEGIN: temporary boot-success beep validation.
+    bsp::buzzer::init();
+    bsp::buzzer::beep_blocking(100, 100, 3, bsp::buzzer::kDefaultPulse);
+    // BUZZER BOOT TEST END
+
     // CAN BUS TEST BEGIN: temporary manual CAN send/receive validation.
     volatile uint32_t can_test_tx_attempts = 0;
     volatile uint32_t can_test_tx_ok       = 0;
