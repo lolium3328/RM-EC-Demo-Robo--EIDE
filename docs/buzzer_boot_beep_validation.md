@@ -69,10 +69,7 @@ bsp::buzzer::beep_blocking(100, 100, 3, bsp::buzzer::kDefaultPulse);
 通过标准：
 
 - USB-CAN 分析仪每秒看到一帧 `ID 0x200`。
-- `bus::can::diagnostics().started == true`。
-- `filter_status == 0`。
-- `start_status == 0`。
-- `notification_status == 0`。
+- `bus::can::start()` 和 `bus::can::is_started()` 均表明 CAN 已成功启动。
 
 ## 后续删除方法
 

@@ -157,7 +157,7 @@ bsp::buzzer::beep_blocking(100, 100, 3, 125);
 回归验证：
 
 - 蜂鸣器响完后，现有 CAN 测试仍每秒发送 `ID 0x200`。
-- CAN 启动诊断仍为 `started == true`，`filter_status == 0`，`start_status == 0`，`notification_status == 0`。
+- CAN 启动后 `bus::can::start()` 和 `bus::can::is_started()` 均返回 `true`。
 
 ## Assumptions
 

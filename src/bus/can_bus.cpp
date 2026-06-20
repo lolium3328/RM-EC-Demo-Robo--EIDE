@@ -9,61 +9,17 @@
 
 namespace bus::can {
 
-void refresh_runtime_diagnostics(CAN_HandleTypeDef* hcan);
-
 namespace {
 
-volatile Diagnostics g_diagnostics = {};
+volatile bool g_started            = false;
+volatile bool g_rx_available       = false;
 volatile Frame g_last_rx_frame     = {};
 
 }
 
-void refresh_runtime_diagnostics(CAN_HandleTypeDef* hcan) {
-    if (hcan == nullptr) {
-        return;
-    }
-
-    const uint32_t esr = hcan->Instance->ESR;
-    g_diagnostics.can_esr = esr;
-    g_diagnostics.hal_state = static_cast<uint32_t>(HAL_CAN_GetState(hcan));
-    g_diagnostics.last_error = static_cast<int32_t>(HAL_CAN_GetError(hcan));
-    g_diagnostics.last_error_code = static_cast<uint8_t>((esr >> 4U) & 0x7U);
-    g_diagnostics.tx_error_counter = static_cast<uint8_t>((esr >> 24U) & 0xFFU);
-    g_diagnostics.rx_error_counter = static_cast<uint8_t>((esr >> 16U) & 0xFFU);
-    g_diagnostics.bus_off = ((esr & CAN_ESR_BOFF) != 0U);
-    g_diagnostics.error_passive = ((esr & CAN_ESR_EPVF) != 0U);
-    g_diagnostics.error_warning = ((esr & CAN_ESR_EWGF) != 0U);
-    if (g_diagnostics.bus_off) {
-        g_diagnostics.bus_off_count = g_diagnostics.bus_off_count + 1U;
-    }
-}
-
 bool init() {
-    g_diagnostics.started             = false;
-    g_diagnostics.filter_status       = -1;
-    g_diagnostics.start_status        = -1;
-    g_diagnostics.notification_status = -1;
-    g_diagnostics.tx_status           = -1;
-    g_diagnostics.rx_status           = -1;
-    g_diagnostics.last_error          = -1;
-    g_diagnostics.hal_state           = static_cast<uint32_t>(HAL_CAN_GetState(&hcan1));
-    g_diagnostics.can_esr             = (hcan1.Instance != nullptr) ? hcan1.Instance->ESR : 0U;
-    g_diagnostics.start_attempts      = 0;
-    g_diagnostics.tx_success_count    = 0;
-    g_diagnostics.tx_fail_count       = 0;
-    g_diagnostics.rx_count            = 0;
-    g_diagnostics.rx_error_count      = 0;
-    g_diagnostics.ack_error_count     = 0;
-    g_diagnostics.bus_off_count       = 0;
-    g_diagnostics.tx_error_counter    = 0;
-    g_diagnostics.rx_error_counter    = 0;
-    g_diagnostics.error_warning       = false;
-    g_diagnostics.error_passive       = false;
-    g_diagnostics.bus_off             = false;
-    g_diagnostics.last_error_code     = 0;
-    g_diagnostics.last_rx_id          = 0;
-    g_diagnostics.last_rx_len         = 0;
-    g_diagnostics.last_step           = StartStep::NotStarted;
+    g_started      = false;
+    g_rx_available = false;
 
     g_last_rx_frame.id = 0;
     g_last_rx_frame.len = 0;
@@ -77,10 +33,7 @@ bool init() {
 }
 
 bool start() {
-    g_diagnostics.start_attempts = g_diagnostics.start_attempts + 1;
-
-    if (g_diagnostics.started) {
-        g_diagnostics.hal_state = static_cast<uint32_t>(HAL_CAN_GetState(&hcan1));
+    if (g_started) {
         return true;
     }
 
@@ -96,44 +49,29 @@ bool start() {
     filter.FilterActivation     = ENABLE;
     filter.SlaveStartFilterBank = 14;
 
-    g_diagnostics.filter_status = static_cast<int32_t>(HAL_CAN_ConfigFilter(&hcan1, &filter));
-    if (g_diagnostics.filter_status != HAL_OK) {
-        g_diagnostics.last_step = StartStep::Failed;
-        g_diagnostics.hal_state = static_cast<uint32_t>(HAL_CAN_GetState(&hcan1));
-        return false;
-    }
-    g_diagnostics.last_step = StartStep::FilterConfigured;
-
-    g_diagnostics.start_status = static_cast<int32_t>(HAL_CAN_Start(&hcan1));
-    if (g_diagnostics.start_status != HAL_OK) {
-        g_diagnostics.last_step = StartStep::Failed;
-        g_diagnostics.hal_state = static_cast<uint32_t>(HAL_CAN_GetState(&hcan1));
-        return false;
-    }
-    g_diagnostics.last_step = StartStep::Started;
-
-    g_diagnostics.notification_status =
-        static_cast<int32_t>(HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING));
-    if (g_diagnostics.notification_status != HAL_OK) {
-        g_diagnostics.last_step = StartStep::Failed;
-        g_diagnostics.hal_state = static_cast<uint32_t>(HAL_CAN_GetState(&hcan1));
-        g_diagnostics.can_esr = hcan1.Instance->ESR;
+    if (HAL_CAN_ConfigFilter(&hcan1, &filter) != HAL_OK) {
         return false;
     }
 
-    g_diagnostics.started   = true;
-    g_diagnostics.last_step = StartStep::NotificationEnabled;
-    g_diagnostics.hal_state = static_cast<uint32_t>(HAL_CAN_GetState(&hcan1));
-    g_diagnostics.can_esr   = hcan1.Instance->ESR;
+    if (HAL_CAN_Start(&hcan1) != HAL_OK) {
+        return false;
+    }
+
+    if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK) {
+        return false;
+    }
+
+    g_started = true;
     return true;
 }
 
-bool is_started() { return g_diagnostics.started; }
-//只接收最新帧
+bool is_started() { return g_started; }
+
+// 只接收最新帧
 bool receive(Frame& frame, uint32_t timeout_ms) {
     (void)timeout_ms;
 
-    if (g_diagnostics.rx_count == 0) {
+    if (!g_rx_available) {
         return false;
     }
 
@@ -154,8 +92,7 @@ bool receive(Frame& frame, uint32_t timeout_ms) {
 }
 
 bool send_std(uint16_t id, const uint8_t* data, uint8_t len) {
-    if (!g_diagnostics.started || id > 0x7FFU || len > 8U || (data == nullptr && len > 0U)) {
-        g_diagnostics.tx_fail_count = g_diagnostics.tx_fail_count + 1U;
+    if (!g_started || id > 0x7FFU || len > 8U || (data == nullptr && len > 0U)) {
         return false;
     }
 
@@ -171,24 +108,9 @@ bool send_std(uint16_t id, const uint8_t* data, uint8_t len) {
         tx_data[i] = data[i];
     }
 
-    uint32_t mailbox       = 0;
-    g_diagnostics.tx_status = static_cast<int32_t>(HAL_CAN_AddTxMessage(&hcan1, &tx_header, tx_data, &mailbox));
-    refresh_runtime_diagnostics(&hcan1);
-
-    if (g_diagnostics.tx_status != HAL_OK) {
-        g_diagnostics.tx_fail_count = g_diagnostics.tx_fail_count + 1U;
-        return false;
-    }
-
-    if (g_diagnostics.last_error_code == 3U) {
-        g_diagnostics.ack_error_count = g_diagnostics.ack_error_count + 1U;
-    }
-
-    g_diagnostics.tx_success_count = g_diagnostics.tx_success_count + 1U;
-    return true;
+    uint32_t mailbox = 0;
+    return HAL_CAN_AddTxMessage(&hcan1, &tx_header, tx_data, &mailbox) == HAL_OK;
 }
-
-const volatile Diagnostics& diagnostics() { return g_diagnostics; }
 
 }  // namespace bus::can
 
@@ -200,12 +122,7 @@ extern "C" void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef* hcan) {
     CAN_RxHeaderTypeDef rx_header = {};
     uint8_t rx_data[8]            = {};
 
-    bus::can::g_diagnostics.rx_status =
-        static_cast<int32_t>(HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rx_header, rx_data));
-    bus::can::refresh_runtime_diagnostics(hcan);
-
-    if (bus::can::g_diagnostics.rx_status != HAL_OK) {
-        bus::can::g_diagnostics.rx_error_count = bus::can::g_diagnostics.rx_error_count + 1U;
+    if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rx_header, rx_data) != HAL_OK) {
         return;
     }
 
@@ -221,7 +138,5 @@ extern "C" void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef* hcan) {
         bus::can::g_last_rx_frame.data[i] = 0U;
     }
 
-    bus::can::g_diagnostics.rx_count   = bus::can::g_diagnostics.rx_count + 1U;
-    bus::can::g_diagnostics.last_rx_id = bus::can::g_last_rx_frame.id;
-    bus::can::g_diagnostics.last_rx_len = bus::can::g_last_rx_frame.len;
+    bus::can::g_rx_available = true;
 }
