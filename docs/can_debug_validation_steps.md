@@ -69,6 +69,8 @@ can_started = can_bus::start();
 - `HAL_CAN_Start()` 返回 `HAL_OK`。
 - `HAL_CAN_ActivateNotification()` 返回 `HAL_OK`。
 - `HAL_CAN_GetState(&hcan1)` 进入可接收状态，例如 `HAL_CAN_STATE_LISTENING`。
+- `bus::can::diagnostics()` 中 `started == true`，`filter_status == 0`，`start_status == 0`，`notification_status == 0`。
+- `bus::can::diagnostics()` 中 `can_esr`、`last_error`、`last_error_code` 可用于判断总线是否进入错误态。
 
 ## 阶段 3：确认 CAN 中断回调能收到帧
 
@@ -241,6 +243,34 @@ DATA: 00 01 00 02 00 03 00 04
 
 - `HAL_CAN_AddTxMessage()` 返回 `HAL_OK` 只说明成功放入发送 mailbox。
 - 是否真的出现在 CAN 总线上，仍需要 USB-CAN、另一节点或示波器确认。
+- 如果发送后 `bus::can::diagnostics().last_error_code == 3`，说明控制器观察到 ACK error，这通常表示总线上没有正常应答节点、接线/波特率/收发器配置存在问题，或者目标节点被暂停调试影响了应答。
+- 如果 `bus::can::diagnostics().bus_off == true`，说明控制器已经进入 bus-off，需要先恢复总线问题再继续测试。
+
+## 阶段 6.1：确认 ACK 和错误计数
+
+完成内容：
+
+- 在 `send_std()` 后读取 `bus::can::diagnostics()`。
+- 重点观察：
+  - `can_esr`
+  - `last_error`
+  - `last_error_code`
+  - `tx_error_counter`
+  - `rx_error_counter`
+  - `error_warning`
+  - `error_passive`
+  - `bus_off`
+
+检验方式：
+
+- 正常总线下发送测试帧，确认 `last_error_code != 3`，且 `bus_off == false`。
+- 断开对端或移除应答节点后再次发送，检查是否出现 `last_error_code == 3`。
+
+通过标准：
+
+- 正常连接时，发送后不会持续出现 ACK error。
+- `tx_error_counter` 不会持续上升到错误被动或 bus-off。
+- 如果总线有问题，调试器能直接读到对应错误状态，而不是只看到 `send_std()` 返回值。
 
 ## 阶段 7：接入真实电机联调
 
@@ -298,4 +328,3 @@ STM32 发测试帧，USB-CAN 能看到
     ↓
 验证超时保护
 ```
-
