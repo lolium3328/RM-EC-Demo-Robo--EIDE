@@ -73,6 +73,11 @@ can_started = can_bus::start();
 
 ## 阶段 3：确认 CAN 中断回调能收到帧
 
+编译回归：
+
+- 完整链接必须成功，`task_demo` 中的 `bus::can::receive()` 调用不得出现 `undefined reference`。
+- `receive()` 是正常收帧链路的公共接口，删除诊断代码时应保留其声明和实现。
+
 完成内容：
 
 - 实现 `HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)`。
